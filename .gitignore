@@ -1,0 +1,73 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+lib/
+build/
+
+# NestJS
+.nest/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Firebase
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+firestore-debug.log
+ui-debug.log
+
+# Firebase cache
+.firebaserc.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Testing / Coverage
+coverage/
+.nyc_output/
+
+# Runtime
+*.pid
+*.seed
+*.pid.lock
+
+# TypeScript
+*.tsbuildinfo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE / Editors
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+tmp/
+temp/
+
+# Secrets / Credentials
+*.pem
+*.key
+*.crt
+serviceAccountKey.json
+firebase-service-account.json
+
+# Optional: local Firebase emulator data
+# Uncomment if you don't want emulator data committed
+# .firebase/

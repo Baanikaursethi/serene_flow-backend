@@ -13,6 +13,7 @@ export const createNestServer = async (expressInstance: express.Express) => {
     AppModule,
     new ExpressAdapter(expressInstance),
   );
+  app.setGlobalPrefix('api');
 
   app.enableCors({
     origin: true,

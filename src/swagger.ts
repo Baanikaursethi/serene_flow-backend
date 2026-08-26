@@ -15,12 +15,22 @@ export function setupSwagger(app: INestApplication) {
     }),
   );
 
-  const config = new DocumentBuilder()
+  const isEmulator = process.env.FIRESTORE_EMULATOR_HOST || process.env.FUNCTIONS_EMULATOR;
+
+  const builder = new DocumentBuilder()
     .setTitle('Serene Flow API')
     .setDescription('The Serene Flow API description and testing endpoints')
-    .setVersion('1.0')
-    .addServer('/serene-flow-9e7e4/us-central1/api', 'Firebase Local Emulator')
-    .addServer('/', 'Local NestJS Server')
+    .setVersion('1.0');
+
+  if (isEmulator) {
+    builder.addServer('/serene-flow-9e7e4/us-central1/api', 'Firebase Local Emulator');
+    builder.addServer('/', 'Production / Direct Local NestJS');
+  } else {
+    builder.addServer('/', 'Production / Direct Local NestJS (Default)');
+    builder.addServer('/serene-flow-9e7e4/us-central1/api', 'Firebase Local Emulator');
+  }
+
+  const config = builder
     .addBearerAuth(
       {
         type: 'http',

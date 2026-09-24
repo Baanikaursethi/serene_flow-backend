@@ -11,11 +11,18 @@ import { ModerationModule } from './moderation/moderation.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
+const isProd =
+  process.env.APP_ENV === 'prod' ||
+  process.env.NODE_ENV === 'production' ||
+  process.env.GCLOUD_PROJECT === 'sereneflow-prod-bb1c6';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      envFilePath: isProd
+        ? ['.env.sereneflow-prod-bb1c6', '.env.prod', '.env']
+        : ['.env.local', '.env'],
     }),
     FirebaseModule,
     AuthModule,

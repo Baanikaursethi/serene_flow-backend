@@ -16,6 +16,8 @@
     "serve": "npm run build && firebase emulators:start",
     "emulators": "firebase emulators:start",
     "deploy": "firebase deploy --only functions",
+    "deploy:dev": "firebase deploy --only functions --project serene-flow-9e7e4",
+    "deploy:prod": "firebase deploy --only functions --project sereneflow-prod-bb1c6",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",

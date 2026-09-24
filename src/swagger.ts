@@ -22,12 +22,18 @@ export function setupSwagger(app: INestApplication) {
     .setDescription('The Serene Flow API description and testing endpoints')
     .setVersion('1.0');
 
+  const projectId =
+    process.env.FIREBASE_PROJECT_ID ||
+    process.env.GOOGLE_PROJECT_ID ||
+    process.env.GCLOUD_PROJECT ||
+    'sereneflow-prod-bb1c6';
+
   if (isEmulator) {
-    builder.addServer('/serene-flow-9e7e4/us-central1/api', 'Firebase Local Emulator');
+    builder.addServer(`/${projectId}/us-central1/api`, 'Firebase Local Emulator');
     builder.addServer('/', 'Production / Direct Local NestJS');
   } else {
     builder.addServer('/', 'Production / Direct Local NestJS (Default)');
-    builder.addServer('/serene-flow-9e7e4/us-central1/api', 'Firebase Local Emulator');
+    builder.addServer(`/${projectId}/us-central1/api`, 'Firebase Cloud Function');
   }
 
   const config = builder

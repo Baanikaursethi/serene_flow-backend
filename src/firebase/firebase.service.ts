@@ -17,7 +17,8 @@ export class FirebaseService implements OnModuleInit {
     const projectId =
       this.configService.get<string>('FIREBASE_PROJECT_ID') ||
       this.configService.get<string>('GOOGLE_PROJECT_ID') ||
-      'serene-flow-9e7e4';
+      process.env.GCLOUD_PROJECT ||
+      'sereneflow-prod-bb1c6';
     const clientEmail =
       this.configService.get<string>('FIREBASE_CLIENT_EMAIL') ||
       this.configService.get<string>('GOOGLE_CLIENT_EMAIL');
@@ -40,13 +41,18 @@ export class FirebaseService implements OnModuleInit {
       return;
     }
 
-    if (clientEmail && privateKey) {
+    const isMatchingServiceAccount =
+      Boolean(clientEmail &&
+      privateKey &&
+      (!clientEmail.includes('@') || clientEmail.includes(`@${projectId}.iam.gserviceaccount.com`)));
+
+    if (isMatchingServiceAccount) {
       try {
         this.firebaseApp = initializeApp({
           credential: cert({
             projectId,
-            clientEmail,
-            privateKey,
+            clientEmail: clientEmail!,
+            privateKey: privateKey!,
           }),
           storageBucket,
         });

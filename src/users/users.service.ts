@@ -101,7 +101,7 @@ export class UsersService {
     const daysActive = Math.max(1, Math.ceil((Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24)));
 
     // Destructure out sensitive password hash
-    const { password, resetToken, verificationCode, ...publicProfile } = userData;
+    const { password, resetToken, resetCode, resetCodeExpiresAt, verificationCode, ...publicProfile } = userData;
 
     return {
       ...publicProfile,
@@ -174,8 +174,20 @@ export class UsersService {
     const firestore = this.firebaseService.firestore;
 
     if (firestore) {
-      // Cascade delete user data
-      await firestore.collection('users').doc(email).delete();
+      // Cascade delete user data and all Spaces posts authored by this account.
+      const postBatch = firestore.batch();
+      const postQueries = [
+        firestore.collection('posts').where('authorEmail', '==', email),
+      ];
+      if (uid) {
+        postQueries.push(firestore.collection('posts').where('authorUid', '==', uid));
+      }
+      const postsByAuthor = new Map<string, any>();
+      for (const query of postQueries) {
+        const snapshot = await query.get();
+        snapshot.forEach((doc) => postsByAuthor.set(doc.id, doc.data()));
+      }
+      postsByAuthor.forEach((post) => postBatch.delete(firestore.collection('posts').doc(post.id)));
 
       const journalBatch = firestore.batch();
       const journals = await firestore.collection('journals').where('userEmail', '==', email).get();
@@ -187,6 +199,9 @@ export class UsersService {
       moods.forEach((doc) => moodBatch.delete(doc.ref));
       await moodBatch.commit();
 
+      await postBatch.commit();
+      await firestore.collection('users').doc(email).delete();
+
       if (this.firebaseService.auth && uid) {
         try {
           await this.firebaseService.auth.deleteUser(uid);
@@ -196,6 +211,11 @@ export class UsersService {
       }
     } else {
       this.firebaseService.getCollection('users').delete(email);
+
+      const postsMap = this.firebaseService.getCollection('posts');
+      Array.from(postsMap.entries()).forEach(([id, post]: [string, any]) => {
+        if (post.authorEmail === email || (uid && post.authorUid === uid)) postsMap.delete(id);
+      });
 
       const journalsMap = this.firebaseService.getCollection('journals');
       Array.from(journalsMap.entries()).forEach(([k, v]: [string, any]) => {

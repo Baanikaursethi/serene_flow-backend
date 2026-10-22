@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -24,8 +25,8 @@ export class SpacesController {
   constructor(private readonly spacesService: SpacesService) {}
 
   @Get('posts')
-  async getPosts() {
-    return this.spacesService.getPosts();
+  async getPosts(@CurrentUser() user: any) {
+    return this.spacesService.getPosts(user);
   }
 
   @Post('posts')
@@ -69,7 +70,29 @@ export class SpacesController {
   }
 
   @Get('posts/:id/replies')
-  async getReplies(@Param('id') id: string) {
-    return this.spacesService.getReplies(id);
+  async getReplies(@CurrentUser() user: any, @Param('id') id: string) {
+    return this.spacesService.getReplies(user, id);
+  }
+
+  @Patch('posts/:postId/replies/:replyId')
+  async updateReply(
+    @CurrentUser() user: any,
+    @Param('postId') postId: string,
+    @Param('replyId') replyId: string,
+    @Body('text') text: string,
+  ) {
+    if (typeof text !== 'string' || !text.trim()) {
+      throw new BadRequestException('Reply text is required');
+    }
+    return this.spacesService.updateReply(user, postId, replyId, text.trim());
+  }
+
+  @Delete('posts/:postId/replies/:replyId')
+  async deleteReply(
+    @CurrentUser() user: any,
+    @Param('postId') postId: string,
+    @Param('replyId') replyId: string,
+  ) {
+    return this.spacesService.deleteReply(user, postId, replyId);
   }
 }

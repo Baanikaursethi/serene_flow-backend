@@ -49,6 +49,7 @@ export class AuthService {
         this.logger.log(`Email sent successfully to ${to} from ${smtpUser}`);
       } catch (err: any) {
         this.logger.error(`Error sending email to ${to}: ${err.message}`);
+        throw new Error(`Unable to send ${subject} email to ${to}`);
       }
     } else {
       this.logger.log(`[Email Mock - sereneflow27@gmail.com] To: ${to} | Subject: ${subject}`);
@@ -64,7 +65,7 @@ export class AuthService {
     const email = dto.email.toLowerCase().trim();
     const firestore = this.firebaseService.firestore;
     const ceoEmail = this.configService.get<string>('CEO_EMAIL') || 'sereneflow27@gmail.com';
-    const role = email === ceoEmail ? 'ceo' : 'user';
+    const role = email === ceoEmail.toLowerCase() ? 'ceo' : 'user';
 
     let existingUser: any = null;
 
@@ -184,11 +185,26 @@ export class AuthService {
       users.set(email, user);
     }
 
+    const ceoEmail = this.configService.get<string>('CEO_EMAIL') || 'sereneflow27@gmail.com';
+    const role = email === ceoEmail.toLowerCase() ? 'ceo' : 'user';
+
+    // Keep the stored role aligned with the configured CEO account so an old
+    // CEO address cannot retain privileges after the account is changed.
+    if (user.role !== role) {
+      user.role = role;
+      if (firestore) {
+        await firestore.collection('users').doc(email).update({ role });
+      } else {
+        this.firebaseService.getCollection('users').set(email, user);
+      }
+    }
+
     const token = this.generateToken({
       uid: user.uid,
       email: user.email,
       name: user.name,
-      role: user.role,
+      avatar: user.avatar || null,
+      role,
       isVerified: user.isVerified,
     });
 
@@ -200,7 +216,7 @@ export class AuthService {
         email: user.email,
         name: user.name,
         avatar: user.avatar || null,
-        role: user.role,
+        role,
         isVerified: user.isVerified,
         logins: user.logins,
         lastActive: user.lastActive,
@@ -221,50 +237,36 @@ export class AuthService {
       const doc = await firestore.collection('users').doc(email).get();
       if (doc.exists) user = doc.data();
     } else {
-      const users = this.firebaseService.getCollection('users');
-      user = users.get(email);
+      user = this.firebaseService.getCollection('users').get(email);
     }
 
+    // Do not reveal whether an account exists.
     if (!user) {
-      // Return positive message for security
-      return { message: 'If an account with that email exists, a password reset link has been sent.' };
+      return { message: 'If an account with that email exists, a password reset code has been sent.' };
     }
 
-    const resetToken = jwt.sign(
-      { email: user.email, type: 'password_reset' },
-      this.configService.get<string>('JWT_SECRET') || 'super-secret-serene-flow-jwt-key',
-      { expiresIn: '1h' },
-    );
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const resetCodeExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
 
-    user.resetToken = resetToken;
     if (firestore) {
-      await firestore.collection('users').doc(email).update({ resetToken });
+      await firestore.collection('users').doc(email).update({ resetCode, resetCodeExpiresAt });
     } else {
+      user.resetCode = resetCode;
+      user.resetCodeExpiresAt = resetCodeExpiresAt;
       this.firebaseService.getCollection('users').set(email, user);
     }
 
     await this.sendEmail(
       email,
       'Serene Flow - Reset Your Password',
-      `<h2>Password Reset Request</h2><p>Use token: <code>${resetToken}</code> to reset your password.</p>`,
+      `<h2>Password Reset Request</h2><p>Your 6-digit password reset code is: <strong>${resetCode}</strong></p><p>This code expires in 1 hour.</p>`,
     );
 
-    return {
-      message: 'Password reset email sent successfully from sereneflow27@gmail.com',
-      resetToken, // included for easy API testing
-    };
+    return { message: 'Password reset code sent successfully.' };
   }
 
   async resetPassword(dto: ResetPasswordDto) {
-    let payload: any;
-    try {
-      const secret = this.configService.get<string>('JWT_SECRET') || 'super-secret-serene-flow-jwt-key';
-      payload = jwt.verify(dto.token, secret);
-    } catch {
-      throw new BadRequestException('Invalid or expired reset token');
-    }
-
-    const email = payload.email;
+    const email = dto.email.toLowerCase().trim();
     const firestore = this.firebaseService.firestore;
     let user: any = null;
 
@@ -279,13 +281,23 @@ export class AuthService {
       throw new NotFoundException('User not found');
     }
 
+    const expiresAt = user.resetCodeExpiresAt ? new Date(user.resetCodeExpiresAt).getTime() : 0;
+    if (user.resetCode !== dto.code || !expiresAt || Date.now() > expiresAt) {
+      throw new BadRequestException('Invalid or expired reset code');
+    }
+
     const hashedPassword = await bcrypt.hash(dto.newPassword, 10);
-    user.password = hashedPassword;
-    delete user.resetToken;
 
     if (firestore) {
-      await firestore.collection('users').doc(email).update({ password: hashedPassword, resetToken: null });
+      await firestore.collection('users').doc(email).update({
+        password: hashedPassword,
+        resetCode: null,
+        resetCodeExpiresAt: null,
+      });
     } else {
+      user.password = hashedPassword;
+      delete user.resetCode;
+      delete user.resetCodeExpiresAt;
       this.firebaseService.getCollection('users').set(email, user);
     }
 
@@ -308,7 +320,12 @@ export class AuthService {
       throw new NotFoundException('Account not found');
     }
 
-    if (user.verificationCode !== dto.code && dto.code !== '123456') {
+    if (user.isVerified) {
+      throw new BadRequestException('Account email is already verified');
+    }
+
+    // Never accept a fixed or fallback verification code.
+    if (user.verificationCode !== dto.code) {
       throw new BadRequestException('Invalid verification code');
     }
 
@@ -317,11 +334,41 @@ export class AuthService {
 
     if (firestore) {
       await firestore.collection('users').doc(email).update({ isVerified: true, verificationCode: null });
+      if (this.firebaseService.auth && user.uid) {
+        try {
+          await this.firebaseService.auth.updateUser(user.uid, { emailVerified: true });
+        } catch {
+          // Custom Firestore/JWT auth remains authoritative if Firebase Auth sync is unavailable.
+        }
+      }
     } else {
       this.firebaseService.getCollection('users').set(email, user);
     }
 
-    return { message: 'Email verified successfully' };
+    const token = this.generateToken({
+      uid: user.uid,
+      email: user.email,
+      name: user.name,
+      avatar: user.avatar || null,
+      role: user.role,
+      isVerified: true,
+    });
+
+    return {
+      message: 'Email verified successfully',
+      token,
+      user: {
+        uid: user.uid,
+        email: user.email,
+        name: user.name,
+        avatar: user.avatar || null,
+        role: user.role,
+        isVerified: true,
+        logins: user.logins || 1,
+        lastActive: user.lastActive,
+        createdAt: user.createdAt,
+      },
+    };
   }
 
   async resendVerification(dto: ResendVerificationDto) {
@@ -359,6 +406,6 @@ export class AuthService {
       `<p>Your new verification code is: <strong>${verificationCode}</strong></p>`,
     );
 
-    return { message: 'Verification email resent successfully', verificationCode };
+    return { message: 'Verification email resent successfully' };
   }
 }

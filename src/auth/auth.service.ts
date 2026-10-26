@@ -124,11 +124,15 @@ export class AuthService {
     }
 
     // Send verification email
-    await this.sendEmail(
-      email,
-      'Verify Your Serene Flow Account',
-      `<h2>Welcome to Serene Flow, ${dto.name}!</h2><p>Your verification code is: <strong>${verificationCode}</strong></p>`,
-    );
+    try {
+      await this.sendEmail(
+        email,
+        'Verify Your Serene Flow Account',
+        `<h2>Welcome to Serene Flow, ${dto.name}!</h2><p>Your verification code is: <strong>${verificationCode}</strong></p>`,
+      );
+    } catch (e: any) {
+      this.logger.warn(`Could not send verification email to ${email}: ${e.message}`);
+    }
 
     const token = this.generateToken({ uid, email, role, isVerified: false });
 

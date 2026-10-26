@@ -44,6 +44,10 @@ export const api = onRequest(
       nestServer = express();
       await createNestServer(nestServer);
     }
+    // Handle both /api prefix and direct path requests seamlessly
+    if (req.url.startsWith('/api/') || req.url === '/api') {
+      req.url = req.url.replace(/^\/api/, '') || '/';
+    }
     return nestServer(req, res);
   },
 );

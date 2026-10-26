@@ -1,6 +1,6 @@
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { initializeApp, getApps, cert, App, deleteApp } from 'firebase-admin/app';
+import { initializeApp, getApps, cert, App } from 'firebase-admin/app';
 import { getAuth, Auth } from 'firebase-admin/auth';
 import { getFirestore, Firestore } from 'firebase-admin/firestore';
 import { getStorage, Storage } from 'firebase-admin/storage';
@@ -30,50 +30,47 @@ export class FirebaseService implements OnModuleInit {
       this.configService.get<string>('GOOGLE_STORAGE_BUCKET');
 
     if (privateKey) {
-      privateKey = privateKey.replace(/\\n/g, '\n');
+      privateKey = privateKey.replace(/^["']|["']$/g, '').replace(/\\n/g, '\n');
     }
 
-    if (projectId && clientEmail && privateKey) {
-      this.logger.log('Production/Live credentials found. Forcing connection to live Firebase...');
+    const existingApps = getApps();
+    if (existingApps.length > 0) {
+      this.firebaseApp = existingApps[0]!;
+      this.logger.log(`Using existing Firebase App instance for project: ${this.firebaseApp.name}`);
+      return;
+    }
 
-      // Disable emulator connection by deleting the emulator host variables
-      delete process.env.FIRESTORE_EMULATOR_HOST;
-      delete process.env.FIREBASE_AUTH_EMULATOR_HOST;
-      delete process.env.FIREBASE_STORAGE_EMULATOR_HOST;
+    // Verify service account email belongs to the intended project
+    const emailMatchesProject =
+      clientEmail &&
+      (clientEmail.includes(`@${projectId}.`) || !clientEmail.includes('.iam.gserviceaccount.com'));
 
-      // Delete any existing default apps initialized by the emulator framework
-      const apps = getApps();
-      for (const app of apps) {
-        try {
-          await deleteApp(app);
-        } catch (e) {
-          // ignore
-        }
-      }
-
+    if (clientEmail && privateKey && emailMatchesProject) {
       try {
         this.firebaseApp = initializeApp({
           credential: cert({
             projectId,
-            clientEmail: clientEmail!,
-            privateKey: privateKey!,
+            clientEmail,
+            privateKey,
           }),
-          storageBucket: this.configService.get<string>('FIREBASE_STORAGE_BUCKET') || this.configService.get<string>('GOOGLE_STORAGE_BUCKET'),
+          storageBucket,
         });
-        this.logger.log(`Firebase Admin initialized successfully for live project ${projectId}.`);
+        this.logger.log(`Firebase Admin initialized successfully with service account for project: ${projectId}.`);
       } catch (err: any) {
-        this.logger.error('Failed to initialize Firebase Admin SDK for live project', err.stack);
+        this.logger.error(`Failed to initialize Firebase Admin SDK with service account: ${err.message}`, err.stack);
       }
     } else {
-      const apps = getApps();
-      if (apps.length > 0) {
-        this.firebaseApp = apps[0]!;
-        this.logger.log('Using existing Firebase App instance.');
-      } else if (process.env.FIRESTORE_EMULATOR_HOST || process.env.FUNCTIONS_EMULATOR) {
-        this.firebaseApp = initializeApp({ projectId: projectId || 'serene-flow-9e7e4' });
-        this.logger.log(`Firebase Admin connected to Local Emulator Suite (Project: ${projectId || 'serene-flow-9e7e4'}).`);
-      } else {
-        this.logger.warn('Firebase production credentials not set in .env. Running in standalone local development mode.');
+      if (clientEmail && !emailMatchesProject) {
+        this.logger.warn(`Provided service account email (${clientEmail}) does not match target project (${projectId}). Falling back to Application Default Credentials.`);
+      }
+      try {
+        this.firebaseApp = initializeApp({
+          projectId,
+          storageBucket,
+        });
+        this.logger.log(`Firebase Admin initialized with default credentials for project: ${projectId}.`);
+      } catch (err: any) {
+        this.logger.warn(`Firebase Admin initialization fallback warning: ${err.message}`);
       }
     }
   }
@@ -87,8 +84,12 @@ export class FirebaseService implements OnModuleInit {
   }
 
   get firestore(): Firestore | null {
-    const dbId = this.configService.get<string>('FIRESTORE_DATABASE_ID') || '(default)';
-    return this.firebaseApp ? getFirestore(this.firebaseApp, dbId) : null;
+    if (!this.firebaseApp) return null;
+    const dbId = this.configService.get<string>('FIRESTORE_DATABASE_ID');
+    if (dbId && dbId !== '(default)' && dbId !== 'default') {
+      return getFirestore(this.firebaseApp, dbId);
+    }
+    return getFirestore(this.firebaseApp);
   }
 
   get storage(): Storage | null {

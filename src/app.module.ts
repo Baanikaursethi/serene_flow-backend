@@ -21,7 +21,7 @@ const isProd =
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: isProd
-        ? ['.env.sereneflow-prod-bb1c6', '.env.prod', '.env']
+        ? ['.env.sereneflow-prod-bb1c6', '.env.prod']
         : ['.env.local', '.env'],
     }),
     FirebaseModule,

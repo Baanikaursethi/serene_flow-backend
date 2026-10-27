@@ -30,7 +30,10 @@ export class AuthService {
     const smtpHost = this.configService.get<string>('SMTP_HOST') || 'smtp.gmail.com';
     const smtpPort = parseInt(this.configService.get<string>('SMTP_PORT') || '587', 10);
     const smtpUser = this.configService.get<string>('SMTP_USER') || 'sereneflow27@gmail.com';
-    const smtpPass = this.configService.get<string>('SMTP_PASS');
+    let smtpPass = this.configService.get<string>('SMTP_PASS') || this.configService.get<string>('SMTP_PASS_LOCAL');
+    if (smtpPass) {
+      smtpPass = smtpPass.replace(/\s+/g, '');
+    }
 
     if (smtpPass) {
       try {
@@ -52,7 +55,7 @@ export class AuthService {
         throw new Error(`Unable to send ${subject} email to ${to}`);
       }
     } else {
-      this.logger.log(`[Email Mock - sereneflow27@gmail.com] To: ${to} | Subject: ${subject}`);
+      this.logger.log(`[Email Mock - ${smtpUser}] To: ${to} | Subject: ${subject}`);
     }
   }
 

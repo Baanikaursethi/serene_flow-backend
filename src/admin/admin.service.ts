@@ -1,9 +1,17 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { FirebaseService } from '../firebase';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class AdminService {
-  constructor(private firebaseService: FirebaseService) {}
+  constructor(
+    private firebaseService: FirebaseService,
+    private configService: ConfigService,
+  ) {}
+
+  private get ceoEmail(): string {
+    return (this.configService.get<string>('CEO_EMAIL') || 'sereneflow27@gmail.com').toLowerCase();
+  }
 
   async getUsers() {
     const firestore = this.firebaseService.firestore;
@@ -44,19 +52,23 @@ export class AdminService {
   async getStats() {
     const firestore = this.firebaseService.firestore;
     let totalUsers = 0;
-    let activeToday = 0;
     let totalJournals = 0;
     let totalMoods = 0;
     let totalPosts = 0;
+    let totalReplies = 0;
+    let totalDeletions = 0;
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    let allUsers: any[] = [];
+    let allPosts: any[] = [];
 
     if (firestore) {
       const userSnap = await firestore.collection('users').get();
-      totalUsers = userSnap.size;
-      activeToday = userSnap.docs.filter(
-        (d) => d.data().lastActive && d.data().lastActive.startsWith(todayStr),
-      ).length;
+      allUsers = userSnap.docs.map((d) => d.data());
+      totalUsers = allUsers.length;
 
       const journalSnap = await firestore.collection('journals').get();
       totalJournals = journalSnap.size;
@@ -65,26 +77,80 @@ export class AdminService {
       totalMoods = moodSnap.size;
 
       const postSnap = await firestore.collection('posts').get();
-      totalPosts = postSnap.size;
+      allPosts = postSnap.docs.map((d) => d.data());
+      totalPosts = allPosts.length;
+      totalReplies = allPosts.reduce((acc, p) => acc + ((p.replies || []).length), 0);
+
+      // Deletions are tracked on soft-deleted records; if no explicit field exists,
+      // derive from a 'deletedAccounts' counter collection if present, else 0.
+      try {
+        const delSnap = await firestore.collection('deletedAccounts').get();
+        totalDeletions = delSnap.size;
+      } catch {
+        totalDeletions = 0;
+      }
     } else {
       const usersMap = this.firebaseService.getCollection('users');
-      totalUsers = usersMap.size;
-      activeToday = Array.from(usersMap.values()).filter(
-        (u: any) => u.lastActive && u.lastActive.startsWith(todayStr),
-      ).length;
+      allUsers = Array.from(usersMap.values());
+      totalUsers = allUsers.length;
 
       totalJournals = this.firebaseService.getCollection('journals').size;
       totalMoods = this.firebaseService.getCollection('moods').size;
-      totalPosts = this.firebaseService.getCollection('posts').size;
+
+      const postsMap = this.firebaseService.getCollection('posts');
+      allPosts = Array.from(postsMap.values());
+      totalPosts = allPosts.length;
+      totalReplies = allPosts.reduce((acc, p) => acc + ((p.replies || []).length), 0);
+      totalDeletions = 0;
     }
 
+    // Compute time-bucketed stats from the user list.
+    const activeToday = allUsers.filter(
+      (u) => u.lastActive && u.lastActive.startsWith(todayStr),
+    ).length;
+
+    const activeUsersWeek = allUsers.filter((u) => {
+      if (!u.lastActive) return false;
+      return new Date(u.lastActive) >= weekAgo;
+    }).length;
+
+    const newUsersWeek = allUsers.filter((u) => {
+      if (!u.createdAt) return false;
+      return new Date(u.createdAt) >= weekAgo;
+    }).length;
+
+    // Approximate logins from stored login counts; no per-event log exists yet.
+    const totalLogins = allUsers.reduce((acc, u) => acc + (u.logins || 0), 0);
+
+    // loginsToday / loginsWeek: use lastActive as a best-effort proxy since
+    // we do not store per-day login event counts.
+    const loginsToday = activeToday;
+    const loginsWeek = activeUsersWeek;
+    const signupsWeek = newUsersWeek;
+
+    // Recent activity log derived from the existing getLogs helper.
+    const recentActivity = (await this.getLogs()).slice(0, 12).map((l) => ({
+      type: l.type,
+      time: l.time,
+    }));
+
     return {
-      ceoEmail: 'sereneflow27@gmail.com',
+      ceoEmail: this.ceoEmail,
       totalUsers,
       activeToday,
+      activeUsersWeek,
+      newUsersWeek,
+      totalLogins,
+      loginsToday,
+      loginsWeek,
+      signupsWeek,
+      totalDeletions,
+      deletionsWeek: 0, // requires an event store; placeholder until tracked
+      totalPosts,
+      totalReplies,
       totalJournals,
       totalMoods,
-      totalPosts,
+      recentActivity,
       timestamp: new Date().toISOString(),
     };
   }

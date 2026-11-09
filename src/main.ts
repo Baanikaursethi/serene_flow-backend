@@ -5,6 +5,23 @@ import { setupSwagger } from './swagger';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
+
+  // Fail fast on missing JWT_SECRET — a missing secret means ALL token
+  // operations will fail, which is better surfaced at startup than at
+  // the first request.
+  if (!process.env.JWT_SECRET) {
+    logger.error(
+      '[SECURITY] JWT_SECRET environment variable is not set. ' +
+      'All token signing and verification will fail. ' +
+      'Set JWT_SECRET in your .env file or environment before starting the server.',
+    );
+    // In production (Cloud Run / Firebase Functions), exit to force a restart
+    // rather than silently serving 500s on every authenticated request.
+    if (process.env.NODE_ENV === 'production') {
+      process.exit(1);
+    }
+  }
+
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix('api');
 
@@ -18,7 +35,7 @@ async function bootstrap() {
     new ValidationPipe({
       whitelist: true,
       transform: true,
-      forbidNonWhitelisted: false,
+      forbidNonWhitelisted: true,
     }),
   );
 

@@ -55,7 +55,7 @@ describe('AuthService password reset', () => {
     } as any, config as any);
 
     await expect(service.forgotPassword({ email: 'user@example.com' })).rejects.toThrow(
-      'Unable to send Serene Flow - Reset Your Password email to user@example.com',
+      'We were unable to deliver the reset email. Please check that your email address is correct and try again.',
     );
   });
 

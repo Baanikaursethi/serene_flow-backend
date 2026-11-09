@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { FirebaseModule } from './firebase/firebase.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -24,6 +26,16 @@ const isProd =
         ? ['.env.sereneflow-prod-bb1c6', '.env.prod']
         : ['.env.local', '.env'],
     }),
+    // Global rate limiting: max 60 requests per 60 seconds per IP.
+    // Auth-sensitive endpoints (login, forgot-password, verify-email, reset-password)
+    // use a tighter @Throttle() override defined on their controllers.
+    ThrottlerModule.forRoot([
+      {
+        name: 'global',
+        ttl: 60000, // 60 seconds
+        limit: 60,
+      },
+    ]),
     FirebaseModule,
     AuthModule,
     UsersModule,
@@ -34,6 +46,13 @@ const isProd =
     ModerationModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    // Apply the throttler guard globally to every route.
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 export class AppModule {}

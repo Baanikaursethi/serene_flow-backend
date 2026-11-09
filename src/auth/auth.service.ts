@@ -60,7 +60,10 @@ export class AuthService {
   }
 
   private generateToken(payload: object): string {
-    const secret = this.configService.get<string>('JWT_SECRET') || 'super-secret-serene-flow-jwt-key';
+    const secret = this.configService.get<string>('JWT_SECRET');
+    if (!secret) {
+      throw new Error('JWT_SECRET environment variable is not set. Cannot issue tokens.');
+    }
     return jwt.sign(payload, secret, { expiresIn: '7d' });
   }
 
@@ -263,11 +266,18 @@ export class AuthService {
       this.firebaseService.getCollection('users').set(email, user);
     }
 
-    await this.sendEmail(
-      email,
-      'Serene Flow - Reset Your Password',
-      `<h2>Password Reset Request</h2><p>Your 6-digit password reset code is: <strong>${resetCode}</strong></p><p>This code expires in 1 hour.</p>`,
-    );
+    try {
+      await this.sendEmail(
+        email,
+        'Serene Flow - Reset Your Password',
+        `<h2>Password Reset Request</h2><p>Your 6-digit password reset code is: <strong>${resetCode}</strong></p><p>This code expires in 1 hour.</p>`,
+      );
+    } catch (e: any) {
+      this.logger.error(`Could not send password reset email to ${email}: ${e.message}`);
+      throw new Error(
+        'We were unable to deliver the reset email. Please check that your email address is correct and try again.',
+      );
+    }
 
     return { message: 'Password reset code sent successfully.' };
   }

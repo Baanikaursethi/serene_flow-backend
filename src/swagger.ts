@@ -6,6 +6,15 @@ export function setupSwagger(app: INestApplication) {
   const swaggerUser = process.env.SWAGGER_USER || 'admin';
   const swaggerPass = process.env.SWAGGER_PASSWORD || 'adminpass';
 
+  // Warn loudly if default credentials are still in use — these are publicly
+  // known from the .env.example and must be changed before production.
+  if (swaggerUser === 'admin' && swaggerPass === 'adminpass') {
+    console.warn(
+      '[SECURITY WARNING] Swagger is using default credentials (admin/adminpass). ' +
+      'Set SWAGGER_USER and SWAGGER_PASSWORD environment variables before going to production.',
+    );
+  }
+
   // Protect Swagger endpoints with Basic Auth
   app.use(
     ['/docs', '/docs-json', '/docs-html'],

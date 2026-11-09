@@ -31,6 +31,7 @@
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/swagger": "^11.4.7",
+    "@nestjs/throttler": "^6.7.1",
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
@@ -83,6 +84,9 @@
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
+    "transformIgnorePatterns": [
+      "node_modules/(?!(jose|@firebase|firebase-admin|jwks-rsa|node-fetch|data-uri-to-buffer|fetch-blob|formdata-polyfill)/)"
+    ],
     "collectCoverageFrom": [
       "**/*.(t|j)s"
     ],

@@ -84,6 +84,9 @@ export class SpacesController {
     if (typeof text !== 'string' || !text.trim()) {
       throw new BadRequestException('Reply text is required');
     }
+    if (text.trim().length > 1000) {
+      throw new BadRequestException('Reply text must be 1000 characters or fewer.');
+    }
     return this.spacesService.updateReply(user, postId, replyId, text.trim());
   }
 

@@ -11,6 +11,70 @@ const createService = (posts: Map<string, any>, users: Map<string, any> = new Ma
     { get: jest.fn(() => 'ceo@example.com') } as any,
   );
 
+describe('SpacesService reactions', () => {
+  it('updates Firestore reactions within a transaction', async () => {
+    const storedPost: any = { reactions: { '❤️': 2 }, replies: [] };
+    const docRef = {};
+    const transaction = {
+      get: jest.fn(async () => ({ exists: true, data: () => storedPost })),
+      update: jest.fn((_ref: any, updates: Record<string, any>) => Object.assign(storedPost, updates)),
+    };
+    const firestore = {
+      collection: jest.fn(() => ({ doc: jest.fn(() => docRef) })),
+      runTransaction: jest.fn(async (callback: (tx: any) => Promise<any>) => callback(transaction)),
+    };
+    const service = new SpacesService(
+      { firestore } as any,
+      { checkContent: jest.fn() } as any,
+      { get: jest.fn(() => 'ceo@example.com') } as any,
+    );
+
+    const result = await service.toggleReaction(
+      { email: 'person@example.com' },
+      'post-1',
+      { reactionType: '❤️' } as any,
+    );
+
+    expect(firestore.runTransaction).toHaveBeenCalledTimes(1);
+    expect(transaction.update).toHaveBeenCalledWith(docRef, expect.objectContaining({
+      reactions: { '❤️': 3 },
+      legacyReactionCounts: { '❤️': 2 },
+    }));
+    expect(result.reactions).toEqual({ '❤️': 3 });
+  });
+
+  it('preserves legacy counts while adding and removing current-user reactions', async () => {
+    const posts = new Map<string, any>([
+      ['post-1', { id: 'post-1', reactions: { '❤️': 4 }, replies: [] }],
+    ]);
+    const service = createService(posts);
+
+    const first = await service.toggleReaction(
+      { email: 'person@example.com' },
+      'post-1',
+      { reactionType: '❤️' } as any,
+    );
+    expect(first.reactions).toEqual({ '❤️': 5 });
+    expect(first.myReactions).toEqual(['❤️']);
+
+    const secondUser = await service.toggleReaction(
+      { email: 'other@example.com' },
+      'post-1',
+      { reactionType: '❤️' } as any,
+    );
+    expect(secondUser.reactions).toEqual({ '❤️': 6 });
+
+    const removed = await service.toggleReaction(
+      { email: 'person@example.com' },
+      'post-1',
+      { reactionType: '❤️' } as any,
+    );
+    expect(removed.reactions).toEqual({ '❤️': 5 });
+    expect(removed.myReactions).toEqual([]);
+    expect(posts.get('post-1').legacyReactionCounts).toEqual({ '❤️': 4 });
+  });
+});
+
 describe('SpacesService post ownership', () => {
   it('allows a post owner to delete their post and preserves CEO deletion', async () => {
     const posts = new Map<string, any>([

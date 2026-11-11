@@ -14,7 +14,9 @@ export class CeoRoleGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const user = request.user;
 
-    const ceoEmail = this.configService.get<string>('CEO_EMAIL') || 'sereneflow27@gmail.com';
+    const ceoEmail = (this.configService.get<string>('CEO_EMAIL') || 'sereneflow27@gmail.com')
+      .trim()
+      .toLowerCase();
 
     if (!user) {
       throw new ForbiddenException('User context missing');
@@ -23,7 +25,10 @@ export class CeoRoleGuard implements CanActivate {
     // Require BOTH the role claim (from a valid JWT) AND the email to match
     // the configured CEO address. Role-only is insufficient because a stolen/
     // leaked JWT_SECRET could let an attacker forge a 'ceo' role claim.
-    const isCeo = user.role === 'ceo' && user.email === ceoEmail;
+    const isCeo =
+      user.role === 'ceo' &&
+      typeof user.email === 'string' &&
+      user.email.trim().toLowerCase() === ceoEmail;
     if (!isCeo) {
       throw new ForbiddenException('Access restricted exclusively to CEO/Administrator account');
     }

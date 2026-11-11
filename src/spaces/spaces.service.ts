@@ -271,63 +271,83 @@ export class SpacesService {
    * Helper: return the list of emoji keys that a given user has reacted with.
    */
   private reactionsForUser(reactionUsers: Record<string, string[]>, email: string): string[] {
-    const k = email.toLowerCase();
+    const normalizedEmail = email.toLowerCase();
     return Object.entries(reactionUsers)
-      .filter(([, users]) => users.includes(k))
+      .filter(([, users]) => users.some((user) => user.toLowerCase() === normalizedEmail))
       .map(([emoji]) => emoji);
+  }
+
+  private toggleReactionState(post: any, key: string, userEmail: string) {
+    const reactionUsers: Record<string, string[]> = {};
+    for (const [emoji, users] of Object.entries(post.reactionUsers || {})) {
+      if (Array.isArray(users)) reactionUsers[emoji] = [...users];
+    }
+
+    // Preserve pre-migration aggregate counts as a baseline. They cannot be
+    // attributed to individual users, but must not disappear when a new
+    // reaction is added or toggled off.
+    const legacyCounts: Record<string, number> = post.legacyReactionCounts
+      ? { ...post.legacyReactionCounts }
+      : post.reactionUsers
+        ? {}
+        : { ...(post.reactions || {}) };
+
+    const current = Array.isArray(reactionUsers[key]) ? reactionUsers[key] : [];
+    const has = current.some((email) => String(email).toLowerCase() === userEmail);
+    const updated = has
+      ? current.filter((email) => String(email).toLowerCase() !== userEmail)
+      : [...current, userEmail];
+    if (updated.length) reactionUsers[key] = updated;
+    else delete reactionUsers[key];
+
+    const reactions = this.reactionCountsFromUsers(reactionUsers);
+    for (const [emoji, count] of Object.entries(legacyCounts)) {
+      const baseline = Number(count);
+      if (Number.isFinite(baseline) && baseline > 0) {
+        reactions[emoji] = (reactions[emoji] || 0) + baseline;
+      }
+    }
+
+    return {
+      reactionUsers,
+      legacyCounts,
+      reactions,
+      myReactions: this.reactionsForUser(reactionUsers, userEmail),
+    };
   }
 
   async toggleReaction(userPayload: any, id: string, dto: AddReactionDto) {
     const firestore = this.firebaseService.firestore;
     const key = dto.reactionType;
-    const userEmail = String(userPayload?.email || '').toLowerCase();
+    const userEmail = String(userPayload?.email || '').trim().toLowerCase();
 
     if (firestore) {
       const docRef = firestore.collection('posts').doc(id);
-      const doc = await docRef.get();
-      if (!doc.exists) throw new NotFoundException('Post not found');
-      const post = doc.data()!;
-
-      // Migrate: if stored as counts-only (no reactionUsers), seed reactionUsers from counts
-      // so existing posts don't lose their displayed counts.
-      const reactionUsers: Record<string, string[]> = post.reactionUsers
-        ? { ...post.reactionUsers }
-        : {};
-
-      const current: string[] = Array.isArray(reactionUsers[key]) ? reactionUsers[key] : [];
-      const has = current.includes(userEmail);
-      // Toggle: add if not present, remove if already present
-      reactionUsers[key] = has
-        ? current.filter((u) => u !== userEmail)
-        : [...current, userEmail];
-      // Clean up empty arrays
-      if (reactionUsers[key].length === 0) delete reactionUsers[key];
-
-      const reactions = this.reactionCountsFromUsers(reactionUsers);
-      await docRef.update({ reactionUsers, reactions });
-      return { id, reactions, myReactions: this.reactionsForUser(reactionUsers, userEmail) };
+      return firestore.runTransaction(async (transaction) => {
+        const doc = await transaction.get(docRef);
+        if (!doc.exists) throw new NotFoundException('Post not found');
+        const { reactionUsers, legacyCounts, reactions, myReactions } =
+          this.toggleReactionState(doc.data()!, key, userEmail);
+        transaction.update(docRef, {
+          reactionUsers,
+          legacyReactionCounts: legacyCounts,
+          reactions,
+        });
+        return { id, reactions, myReactions };
+      });
     }
 
     const postsMap = this.firebaseService.getCollection('posts');
     const post = postsMap.get(id);
     if (!post) throw new NotFoundException('Post not found');
 
-    const reactionUsers: Record<string, string[]> = post.reactionUsers
-      ? { ...post.reactionUsers }
-      : {};
-
-    const current: string[] = Array.isArray(reactionUsers[key]) ? reactionUsers[key] : [];
-    const has = current.includes(userEmail);
-    reactionUsers[key] = has
-      ? current.filter((u) => u !== userEmail)
-      : [...current, userEmail];
-    if (reactionUsers[key].length === 0) delete reactionUsers[key];
-
-    const reactions = this.reactionCountsFromUsers(reactionUsers);
+    const { reactionUsers, legacyCounts, reactions, myReactions } =
+      this.toggleReactionState(post, key, userEmail);
     post.reactionUsers = reactionUsers;
+    post.legacyReactionCounts = legacyCounts;
     post.reactions = reactions;
     postsMap.set(id, post);
-    return { id, reactions, myReactions: this.reactionsForUser(reactionUsers, userEmail) };
+    return { id, reactions, myReactions };
   }
 
   async addReply(userPayload: any, id: string, dto: AddReplyDto) {

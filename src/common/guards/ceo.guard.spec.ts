@@ -32,6 +32,13 @@ describe('CeoRoleGuard', () => {
     expect(guard.canActivate(ctx)).toBe(true);
   });
 
+  it('accepts a CEO email with different letter casing', () => {
+    const guard = makeGuard();
+    const ctx = makeContext({ role: 'ceo', email: 'SereneFlow27@Gmail.com' });
+
+    expect(guard.canActivate(ctx)).toBe(true);
+  });
+
   it('denies access when role is "ceo" but email does NOT match CEO_EMAIL (forged role claim)', () => {
     const guard = makeGuard();
     const ctx = makeContext({ role: 'ceo', email: 'attacker@evil.com' });

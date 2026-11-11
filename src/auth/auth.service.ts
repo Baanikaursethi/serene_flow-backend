@@ -16,6 +16,7 @@ import { VerifyEmailDto, ResendVerificationDto } from './dto/verify-email.dto';
 import * as bcrypt from 'bcrypt';
 import * as jwt from 'jsonwebtoken';
 import * as nodemailer from 'nodemailer';
+import { randomInt } from 'node:crypto';
 
 @Injectable()
 export class AuthService {
@@ -91,7 +92,7 @@ export class AuthService {
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
-    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const verificationCode = randomInt(100000, 1_000_000).toString();
     const uid = 'usr_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
 
     const newUser = {
@@ -255,7 +256,7 @@ export class AuthService {
       return { message: 'If an account with that email exists, a password reset code has been sent.' };
     }
 
-    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const resetCode = randomInt(100000, 1_000_000).toString();
     const resetCodeExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
 
     if (firestore) {

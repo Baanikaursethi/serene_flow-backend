@@ -10,7 +10,7 @@
         "firebase-debug.*.log"
       ],
       "predeploy": [
-        "npm run build"
+        "node node_modules/@nestjs/cli/bin/nest.js build"
       ],
       "runtime": "nodejs24"
     }

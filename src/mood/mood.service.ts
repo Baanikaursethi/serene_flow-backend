@@ -7,7 +7,7 @@ export class MoodService {
   constructor(private firebaseService: FirebaseService) {}
 
   async createMood(userPayload: any, dto: CreateMoodDto) {
-    const email = userPayload.email.toLowerCase();
+    const email = String(userPayload?.email || '').trim().toLowerCase();
     const firestore = this.firebaseService.firestore;
     const id = 'mood_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     const now = new Date().toISOString();
@@ -35,32 +35,37 @@ export class MoodService {
   }
 
   async getMoodHistory(userPayload: any) {
-    const email = userPayload.email.toLowerCase();
+    const email = String(userPayload?.email || '').trim().toLowerCase();
+    const userId = String(userPayload?.uid || '').trim();
     const firestore = this.firebaseService.firestore;
+    const belongsToUser = (mood: any) => {
+      const moodUserId = String(mood?.userId || '').trim();
+      // Prefer stable identity when present; older records without a userId
+      // remain discoverable by their normalized email.
+      if (userId && moodUserId) return moodUserId === userId;
+      return !!email && String(mood?.userEmail || '').trim().toLowerCase() === email;
+    };
+    const newestFirst = (a: any, b: any) =>
+      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
 
     if (firestore) {
-      const snap = await firestore
-        .collection('moods')
-        .where('userEmail', '==', email)
-        .get();
-
-      const moods = snap.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-
-      return moods.sort(
-        (a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
-      );
-    } else {
-      const moodsMap = this.firebaseService.getCollection('moods');
-      const moods = Array.from(moodsMap.values()).filter(
-        (m: any) => m.userEmail === email,
-      );
-      return moods.sort(
-        (a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
-      );
+      const moodsRef = firestore.collection('moods');
+      const queries: Promise<any>[] = [];
+      if (email) queries.push(moodsRef.where('userEmail', '==', email).get());
+      if (userId) queries.push(moodsRef.where('userId', '==', userId).get());
+      const snapshots = await Promise.all(queries);
+      const moodsById = new Map<string, any>();
+      for (const snapshot of snapshots) {
+        for (const doc of snapshot.docs) {
+          const mood = doc.data();
+          if (belongsToUser(mood)) moodsById.set(doc.id, { id: doc.id, ...mood });
+        }
+      }
+      return Array.from(moodsById.values()).sort(newestFirst);
     }
+
+    const moodsMap = this.firebaseService.getCollection('moods');
+    return Array.from(moodsMap.values()).filter(belongsToUser).sort(newestFirst);
   }
 
   async getLatestMood(userPayload: any) {

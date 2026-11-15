@@ -103,5 +103,24 @@ describe('MoodService — user data isolation', () => {
     const stored = Array.from(moods.values())[0];
     expect(stored.userEmail).toBe('user@test.com');
   });
+
+  it('reads Firestore history by userEmail and stable userId without duplicates or cross-user leaks', async () => {
+    const docs = [
+      { id: 'by-uid', data: () => ({ userId: 'uid-a', userEmail: 'old-address@test.com', timestamp: '2026-01-03T10:00:00.000Z' }) },
+      { id: 'legacy-email', data: () => ({ userEmail: 'UserA@Test.com', timestamp: '2026-01-02T10:00:00.000Z' }) },
+      { id: 'other-user', data: () => ({ userId: 'uid-b', userEmail: 'usera@test.com', timestamp: '2026-01-04T10:00:00.000Z' }) },
+      { id: 'unrelated', data: () => ({ userId: 'uid-c', userEmail: 'other@test.com', timestamp: '2026-01-05T10:00:00.000Z' }) },
+    ];
+    const where = jest.fn().mockReturnThis();
+    const get = jest.fn().mockResolvedValue({ docs });
+    const firestore = { collection: jest.fn(() => ({ where, get })) };
+    const svc = new MoodService({ firestore, getCollection: jest.fn() } as any);
+
+    const history = await svc.getMoodHistory({ email: ' UserA@Test.com ', uid: 'uid-a' });
+
+    expect(where).toHaveBeenNthCalledWith(1, 'userEmail', '==', 'usera@test.com');
+    expect(where).toHaveBeenNthCalledWith(2, 'userId', '==', 'uid-a');
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(history.map((m: any) => m.id)).toEqual(['by-uid', 'legacy-email']);
+  });
 });
-;

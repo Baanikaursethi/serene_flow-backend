@@ -3,15 +3,24 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import basicAuth from 'express-basic-auth';
 
 export function setupSwagger(app: INestApplication) {
+  const isProduction =
+    process.env.NODE_ENV === 'production' ||
+    process.env.APP_ENV === 'prod' ||
+    process.env.GCLOUD_PROJECT === 'sereneflow-prod-bb1c6';
+  // The username is an identifier, not a secret. Preserve the prior default for
+  // compatibility, but never allow a production password fallback.
   const swaggerUser = process.env.SWAGGER_USER || 'admin';
-  const swaggerPass = process.env.SWAGGER_PASSWORD || 'adminpass';
+  const swaggerPass = process.env.SWAGGER_PASSWORD || (isProduction ? '' : 'adminpass');
 
-  // Warn loudly if default credentials are still in use — these are publicly
-  // known from the .env.example and must be changed before production.
-  if (swaggerUser === 'admin' && swaggerPass === 'adminpass') {
+  if (isProduction && (!swaggerPass || swaggerPass === 'adminpass')) {
+    throw new Error('A production Swagger password must be supplied securely.');
+  }
+
+  // Keep local emulator defaults convenient while warning against their use.
+  if (!isProduction && swaggerUser === 'admin' && swaggerPass === 'adminpass') {
     console.warn(
-      '[SECURITY WARNING] Swagger is using default credentials (admin/adminpass). ' +
-      'Set SWAGGER_USER and SWAGGER_PASSWORD environment variables before going to production.',
+      '[SECURITY WARNING] Swagger is using local development defaults. ' +
+      'Do not use these credentials in production.',
     );
   }
 

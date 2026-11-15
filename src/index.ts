@@ -9,6 +9,8 @@ import { setupSwagger } from './swagger';
 
 const startupLogger = new Logger('CloudFunction');
 const jwtSecret = defineSecret('JWT_SECRET');
+const smtpPassword = defineSecret('SMTP_PASS_LOCAL');
+const swaggerPassword = defineSecret('SWAGGER_PASSWORD');
 
 let nestServer: express.Express;
 
@@ -42,20 +44,24 @@ export const api = onRequest(
   {
     region: 'us-central1',
     timeoutSeconds: 60,
-    secrets: [jwtSecret],
+    secrets: [jwtSecret, smtpPassword, swaggerPassword],
   },
   async (req, res) => {
     // Firebase Functions only exposes bound secrets during invocation. Load it
     // before Nest ConfigModule initializes, and never start without it.
     try {
-      const secretValue = jwtSecret.value();
-      if (!secretValue) {
-        throw new Error('JWT_SECRET is empty');
+      const requiredSecrets = [
+        ['JWT_SECRET', jwtSecret.value()],
+        ['SMTP_PASS_LOCAL', smtpPassword.value()],
+        ['SWAGGER_PASSWORD', swaggerPassword.value()],
+      ] as const;
+      for (const [name, value] of requiredSecrets) {
+        if (!value) throw new Error(`${name} is empty`);
+        process.env[name] = value;
       }
-      process.env.JWT_SECRET = secretValue;
     } catch {
       startupLogger.error(
-        '[SECURITY] The required JWT_SECRET Firebase secret is unavailable. Refusing to start the API.',
+        '[SECURITY] A required Firebase secret is unavailable. Refusing to start the API.',
       );
       res.status(500).send('Server configuration error.');
       return;
